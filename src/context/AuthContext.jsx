@@ -80,13 +80,27 @@ export function AuthProvider({ children }) {
   const adminEmail = import.meta.env.VITE_ADMIN_EMAIL || 'admin@sharevix.com';
 
   useEffect(() => {
-    // Explicitly set browser local persistence to prevent session logout on browser close
-    setPersistence(auth, browserLocalPersistence).catch(err => {
-      console.error("Auth persistence error:", err);
-    });
+    if (!isMock) {
+      // Explicitly set browser local persistence to prevent session logout on browser close
+      setPersistence(auth, browserLocalPersistence).catch(err => {
+        console.error("Auth persistence error:", err);
+      });
+    }
 
     const unsubscribe = auth.onAuthStateChanged(async user => {
       if (user) {
+        if (isMock) {
+          const storedProfile = localStorage.getItem(`mock_profile_${user.uid}`);
+          const profile = storedProfile ? JSON.parse(storedProfile) : null;
+          setCurrentUser({
+            ...user,
+            isAdmin: user.email === adminEmail,
+            ...profile
+          });
+          setLoading(false);
+          return;
+        }
+
         // Restore connections from Firestore to localStorage on login
         try {
           const { doc, getDoc } = await import('firebase/firestore');
@@ -126,6 +140,10 @@ export function AuthProvider({ children }) {
     const handleAccountsUpdated = async () => {
       const user = auth.currentUser;
       if (user) {
+        if (isMock) {
+          console.log("Mock syncing connections (bypassed Firestore)");
+          return;
+        }
         try {
           const keys = [
             'connectedAccounts',
@@ -178,10 +196,48 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (email, password) => {
+    if (isMock) {
+      const user = {
+        uid: 'mock-user-123',
+        email: email,
+        displayName: email.split('@')[0],
+        emailVerified: true
+      };
+      localStorage.setItem('mock_user', JSON.stringify(user));
+      auth.currentUser = user;
+      const { triggerListeners } = await import('../firebase');
+      triggerListeners(user);
+      return { user };
+    }
     return signInWithEmailAndPassword(auth, email, password);
   };
 
   const signup = async (email, password) => {
+    if (isMock) {
+      const user = {
+        uid: 'mock-user-123',
+        email: email,
+        displayName: email.split('@')[0],
+        emailVerified: true
+      };
+      localStorage.setItem('mock_user', JSON.stringify(user));
+      auth.currentUser = user;
+
+      const mockProfile = {
+        name: email.split('@')[0],
+        email: email,
+        role: email === adminEmail ? 'admin' : 'user',
+        status: 'active',
+        posts: 0,
+        joined: new Date().toISOString().split('T')[0]
+      };
+      localStorage.setItem(`mock_profile_${user.uid}`, JSON.stringify(mockProfile));
+
+      const { triggerListeners } = await import('../firebase');
+      triggerListeners(user);
+      return { user };
+    }
+
     // Real Firebase Auth signup
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
@@ -202,6 +258,31 @@ export function AuthProvider({ children }) {
   };
 
   const loginWithGoogle = async () => {
+    if (isMock) {
+      const user = {
+        uid: 'mock-google-user',
+        email: 'google-user@example.com',
+        displayName: 'Mock Google User',
+        emailVerified: true
+      };
+      localStorage.setItem('mock_user', JSON.stringify(user));
+      auth.currentUser = user;
+
+      const mockProfile = {
+        name: 'Mock Google User',
+        email: 'google-user@example.com',
+        role: 'user',
+        status: 'active',
+        posts: 0,
+        joined: new Date().toISOString().split('T')[0]
+      };
+      localStorage.setItem(`mock_profile_${user.uid}`, JSON.stringify(mockProfile));
+
+      const { triggerListeners } = await import('../firebase');
+      triggerListeners(user);
+      return { user };
+    }
+
     const provider = new GoogleAuthProvider();
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
@@ -228,6 +309,13 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    if (isMock) {
+      localStorage.removeItem('mock_user');
+      auth.currentUser = null;
+      const { triggerListeners } = await import('../firebase');
+      triggerListeners(null);
+      return;
+    }
     return signOut(auth);
   };
 

@@ -16,14 +16,44 @@ const firebaseConfig = {
 let app, auth, db, storage;
 let isMock = false;
 
+const listeners = new Set();
+const triggerListeners = (user) => {
+  listeners.forEach(cb => cb(user));
+};
+
 // Initialize Firebase only if config is provided
 if (firebaseConfig.apiKey && firebaseConfig.apiKey !== 'your_api_key_here') {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  storage = getStorage(app);
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    storage = getStorage(app);
+  } catch (e) {
+    console.error("Firebase initialization failed, falling back to mock mode:", e);
+    isMock = true;
+  }
 } else {
-  throw new Error("Firebase configuration is missing or invalid. Please configure your .env file with real credentials.");
+  isMock = true;
 }
 
-export { auth, db, storage, isMock };
+if (isMock) {
+  app = {};
+  auth = {
+    currentUser: null,
+    onAuthStateChanged: (callback) => {
+      listeners.add(callback);
+      const stored = localStorage.getItem('mock_user');
+      const user = stored ? JSON.parse(stored) : null;
+      auth.currentUser = user;
+      setTimeout(() => callback(user), 50);
+      return () => {
+        listeners.delete(callback);
+      };
+    }
+  };
+  db = {};
+  storage = null;
+  console.warn("Using mock Firebase services because credentials are not configured.");
+}
+
+export { auth, db, storage, isMock, triggerListeners };
