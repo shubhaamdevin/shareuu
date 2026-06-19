@@ -243,16 +243,20 @@ export function AuthProvider({ children }) {
     const user = userCredential.user;
     
     // Write user profile to Firestore
-    const { setDoc, doc } = await import('firebase/firestore');
-    const { db } = await import('../firebase');
-    await setDoc(doc(db, "users", user.uid), {
-      name: user.email.split('@')[0],
-      email: user.email,
-      role: user.email === adminEmail ? 'admin' : 'user',
-      status: 'active',
-      posts: 0,
-      joined: new Date().toISOString().split('T')[0]
-    });
+    try {
+      const { setDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('../firebase');
+      await setDoc(doc(db, "users", user.uid), {
+        name: user.email.split('@')[0],
+        email: user.email,
+        role: user.email === adminEmail ? 'admin' : 'user',
+        status: 'active',
+        posts: 0,
+        joined: new Date().toISOString().split('T')[0]
+      });
+    } catch (dbErr) {
+      console.warn("Could not create user profile in Firestore. Continuing signup anyway:", dbErr);
+    }
     
     return userCredential;
   };
@@ -287,22 +291,26 @@ export function AuthProvider({ children }) {
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
 
-    // Check/Write user profile to Firestore
-    const { doc, getDoc, setDoc } = await import('firebase/firestore');
-    const { db } = await import('../firebase');
-    
-    const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef);
-    
-    if (!userSnap.exists()) {
-      await setDoc(userRef, {
-        name: user.displayName || user.email.split('@')[0],
-        email: user.email,
-        role: user.email === adminEmail ? 'admin' : 'user',
-        status: 'active',
-        posts: 0,
-        joined: new Date().toISOString().split('T')[0]
-      });
+    // Write user profile to Firestore
+    try {
+      const { doc, getDoc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('../firebase');
+      
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      
+      if (!userSnap.exists()) {
+        await setDoc(userRef, {
+          name: user.displayName || user.email.split('@')[0],
+          email: user.email,
+          role: user.email === adminEmail ? 'admin' : 'user',
+          status: 'active',
+          posts: 0,
+          joined: new Date().toISOString().split('T')[0]
+        });
+      }
+    } catch (dbErr) {
+      console.warn("Could not read/write user profile to Firestore. Continuing login anyway:", dbErr);
     }
 
     return result;
